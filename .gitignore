@@ -47,9 +47,8 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# Project specific
-data/embeddings/*.pkl
-data/faces/
+# Project specific - exclude all data files
+data/
 models/*.pth
 models/*.dat
 *.log
