@@ -1,7 +1,7 @@
 """
 Vector Database Module
 
-Manages storage and retrieval of face embeddings using FAISS or Annoy.
+Manages storage and retrieval of face embeddings using ChromaDB or scikit-learn.
 Includes indexing for fast similarity search and persistence functionality.
 """
 
@@ -11,8 +11,10 @@ import pickle
 import json
 import os
 from typing import Dict, List, Tuple, Optional, Any
-import faiss
 from datetime import datetime
+import chromadb
+from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ class VectorStore:
         self.vector_config = config.get('vector_store', {})
         self.storage_config = config.get('storage', {})
         
-        self.backend = self.vector_config.get('backend', 'faiss')
+        self.backend = self.vector_config.get('backend', 'chromadb')
         self.similarity_metric = self.vector_config.get('similarity_metric', 'cosine')
         self.index_type = self.vector_config.get('index_type', 'flat')
         
@@ -44,7 +46,17 @@ class VectorStore:
         self._ensure_directories()
         
         # Database components
-        self.index = None
+        if self.backend == 'chromadb':
+            # ChromaDB setup
+            self.chroma_client = chromadb.PersistentClient(path=self.embeddings_path)
+            self.collection = self.chroma_client.get_or_create_collection(
+                name="face_embeddings",
+                metadata={"hnsw:space": "cosine" if self.similarity_metric == "cosine" else "l2"}
+            )
+        else:
+            # Fallback to sklearn
+            self.nn_model = None
+            
         self.embeddings = []  # List of embedding vectors
         self.metadata = []    # List of metadata dictionaries
         self.person_ids = []  # List of person IDs
@@ -67,29 +79,22 @@ class VectorStore:
         os.makedirs(os.path.dirname(self.database_file), exist_ok=True)
     
     def _initialize_index(self, embedding_dim: int = 128):
-        """Initialize FAISS index."""
-        if self.backend != 'faiss':
-            logger.warning(f"Backend {self.backend} not fully implemented, using FAISS")
-        
+        """Initialize the vector index."""
         self.embedding_dim = embedding_dim
         
-        if self.similarity_metric == 'cosine':
-            # For cosine similarity, use inner product with normalized vectors
-            if self.index_type == 'flat':
-                self.index = faiss.IndexFlatIP(embedding_dim)
-            else:
-                # For large datasets, use IVF index
-                quantizer = faiss.IndexFlatIP(embedding_dim)
-                self.index = faiss.IndexIVFFlat(quantizer, embedding_dim, 100)
+        if self.backend == 'chromadb':
+            # ChromaDB handles indexing internally
+            logger.info(f"ChromaDB collection ready with dimension: {embedding_dim}")
         else:
-            # Euclidean distance
-            if self.index_type == 'flat':
-                self.index = faiss.IndexFlatL2(embedding_dim)
-            else:
-                quantizer = faiss.IndexFlatL2(embedding_dim)
-                self.index = faiss.IndexIVFFlat(quantizer, embedding_dim, 100)
-        
-        logger.info(f"FAISS index initialized with dimension: {embedding_dim}")
+            # Use sklearn NearestNeighbors as fallback
+            metric = 'cosine' if self.similarity_metric == 'cosine' else 'euclidean'
+            self.nn_model = NearestNeighbors(
+                n_neighbors=5,
+                metric=metric,
+                algorithm='auto'
+            )
+            logger.info(f"sklearn NearestNeighbors initialized with dimension: {embedding_dim}")
+    
     
     def add_embedding(self, person_id: Optional[int], embedding: np.ndarray, 
                      metadata: Optional[Dict[str, Any]] = None) -> int:
@@ -108,8 +113,12 @@ class VectorStore:
             raise ValueError("Invalid embedding")
         
         # Initialize index if needed
-        if self.index is None or self.embedding_dim != len(embedding):
-            self._initialize_index(len(embedding))
+        if self.backend == 'chromadb':
+            if self.embedding_dim is None:
+                self._initialize_index(len(embedding))
+        else:
+            if self.nn_model is None or self.embedding_dim != len(embedding):
+                self._initialize_index(len(embedding))
         
         # Ensure embedding is normalized for cosine similarity
         if self.similarity_metric == 'cosine':
@@ -124,19 +133,28 @@ class VectorStore:
         else:
             self.next_person_id = max(self.next_person_id, person_id + 1)
         
-        # Prepare metadata
+        # Prepare metadata - ensure all values are proper types for ChromaDB
         if metadata is None:
             metadata = {}
         
-        metadata.update({
-            'person_id': person_id,
+        # Clean metadata to ensure ChromaDB compatibility
+        clean_metadata = {}
+        for key, value in metadata.items():
+            if value is not None:
+                if isinstance(value, (str, int, float, bool)):
+                    clean_metadata[key] = value
+                else:
+                    clean_metadata[key] = str(value)
+        
+        clean_metadata.update({
+            'person_id': int(person_id),
             'timestamp': datetime.now().isoformat(),
-            'embedding_size': len(embedding)
+            'embedding_size': int(len(embedding))
         })
         
         # Add to storage
         self.embeddings.append(embedding.copy())
-        self.metadata.append(metadata)
+        self.metadata.append(clean_metadata)
         self.person_ids.append(person_id)
         
         # Update ID mapping
@@ -144,9 +162,18 @@ class VectorStore:
             self.id_to_index[person_id] = []
         self.id_to_index[person_id].append(len(self.embeddings) - 1)
         
-        # Add to FAISS index
-        embedding_2d = embedding.reshape(1, -1).astype(np.float32)
-        self.index.add(embedding_2d)
+        # Add to backend
+        if self.backend == 'chromadb':
+            # Add to ChromaDB
+            self.collection.add(
+                embeddings=[embedding.tolist()],
+                metadatas=[clean_metadata],
+                ids=[f"person_{person_id}_{len(self.id_to_index[person_id])}"]
+            )
+        else:
+            # Rebuild sklearn model if needed
+            if len(self.embeddings) > 0:
+                self.nn_model.fit(np.array(self.embeddings))
         
         # Auto-save periodically
         self.save_counter += 1
@@ -170,14 +197,14 @@ class VectorStore:
         Returns:
             List of matching results with scores and metadata
         """
-        if self.index is None or self.index.ntotal == 0:
+        if len(self.embeddings) == 0:
             return []
         
         if query_embedding is None or len(query_embedding) == 0:
             return []
         
         # Ensure embedding dimension matches
-        if len(query_embedding) != self.embedding_dim:
+        if self.embedding_dim and len(query_embedding) != self.embedding_dim:
             logger.error(f"Query embedding dimension mismatch: {len(query_embedding)} vs {self.embedding_dim}")
             return []
         
@@ -187,37 +214,66 @@ class VectorStore:
             if norm > 0:
                 query_embedding = query_embedding / norm
         
-        # Search in FAISS index
-        query_2d = query_embedding.reshape(1, -1).astype(np.float32)
-        scores, indices = self.index.search(query_2d, k)
-        
         results = []
-        for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
-            if idx == -1:  # No more results
-                break
+        
+        if self.backend == 'chromadb':
+            # Search using ChromaDB
+            try:
+                chroma_results = self.collection.query(
+                    query_embeddings=[query_embedding.tolist()],
+                    n_results=k
+                )
+                
+                if chroma_results['distances'] and chroma_results['metadatas']:
+                    for i, (distance, metadata) in enumerate(zip(chroma_results['distances'][0], chroma_results['metadatas'][0])):
+                        if self.similarity_metric == 'cosine':
+                            similarity = 1.0 - distance  # ChromaDB returns distance, convert to similarity
+                        else:
+                            similarity = 1.0 / (1.0 + distance)
+                        
+                        if similarity >= threshold:
+                            results.append({
+                                'person_id': metadata['person_id'],
+                                'similarity': similarity,
+                                'distance': distance,
+                                'metadata': metadata,
+                                'index': i
+                            })
+            except Exception as e:
+                logger.error(f"ChromaDB search failed: {e}")
+                return []
+                
+        else:
+            # Use sklearn for search
+            if self.nn_model is None or len(self.embeddings) == 0:
+                return []
             
-            # Convert FAISS score to similarity score
+            # Calculate similarities
+            embeddings_array = np.array(self.embeddings)
+            
             if self.similarity_metric == 'cosine':
-                similarity = float(score)  # FAISS returns dot product for IP
+                similarities = cosine_similarity([query_embedding], embeddings_array)[0]
+                # Sort by similarity (descending)
+                sorted_indices = np.argsort(similarities)[::-1]
             else:
-                # Convert L2 distance to similarity
-                similarity = 1.0 / (1.0 + float(score))
+                distances = euclidean_distances([query_embedding], embeddings_array)[0]
+                similarities = 1.0 / (1.0 + distances)
+                # Sort by similarity (descending)
+                sorted_indices = np.argsort(similarities)[::-1]
             
-            # Check threshold
-            if similarity < threshold:
-                continue
-            
-            # Get metadata
-            metadata = self.metadata[idx].copy()
-            person_id = self.person_ids[idx]
-            
-            results.append({
-                'person_id': person_id,
-                'similarity': similarity,
-                'distance': float(score) if self.similarity_metric != 'cosine' else 1.0 - similarity,
-                'metadata': metadata,
-                'index': idx
-            })
+            # Get top k results above threshold
+            for idx in sorted_indices[:k]:
+                similarity = similarities[idx]
+                if similarity >= threshold:
+                    distance = 1.0 - similarity if self.similarity_metric == 'cosine' else euclidean_distances([query_embedding], [embeddings_array[idx]])[0][0]
+                    
+                    results.append({
+                        'person_id': self.person_ids[idx],
+                        'similarity': similarity,
+                        'distance': distance,
+                        'metadata': self.metadata[idx].copy(),
+                        'index': idx
+                    })
         
         # Sort by similarity (descending)
         results.sort(key=lambda x: x['similarity'], reverse=True)
@@ -294,27 +350,59 @@ class VectorStore:
                 updated_indices.append(idx - offset)
             self.id_to_index[pid] = updated_indices
         
-        # Rebuild FAISS index
+        # Rebuild index
         self._rebuild_index()
         
         logger.info(f"Removed person {person_id}")
         return True
     
     def _rebuild_index(self):
-        """Rebuild FAISS index from current embeddings."""
+        """Rebuild index from current embeddings."""
         if not self.embeddings:
-            self._initialize_index(self.embedding_dim or 128)
+            if self.embedding_dim:
+                self._initialize_index(self.embedding_dim)
             return
         
-        # Reinitialize index
-        self._initialize_index(len(self.embeddings[0]))
-        
-        # Add all embeddings
-        if self.embeddings:
-            embeddings_array = np.array(self.embeddings).astype(np.float32)
-            self.index.add(embeddings_array)
-        
-        logger.info("FAISS index rebuilt")
+        if self.backend == 'chromadb':
+            # Clear and rebuild ChromaDB collection
+            try:
+                self.chroma_client.delete_collection("face_embeddings")
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="face_embeddings",
+                    metadata={"hnsw:space": "cosine" if self.similarity_metric == "cosine" else "l2"}
+                )
+                
+                # Re-add all embeddings
+                if self.embeddings:
+                    embeddings_list = [emb.tolist() for emb in self.embeddings]
+                    ids_list = [f"person_{pid}_{i}" for i, pid in enumerate(self.person_ids)]
+                    # Clean metadata for ChromaDB
+                    clean_metadatas = []
+                    for meta in self.metadata:
+                        clean_meta = {}
+                        for key, value in meta.items():
+                            if value is not None:
+                                if isinstance(value, (str, int, float, bool)):
+                                    clean_meta[key] = value
+                                else:
+                                    clean_meta[key] = str(value)
+                        clean_metadatas.append(clean_meta)
+                    
+                    self.collection.add(
+                        embeddings=embeddings_list,
+                        metadatas=clean_metadatas,
+                        ids=ids_list
+                    )
+                    
+                logger.info("ChromaDB collection rebuilt")
+            except Exception as e:
+                logger.error(f"Failed to rebuild ChromaDB collection: {e}")
+        else:
+            # Rebuild sklearn model
+            if self.embeddings:
+                self.nn_model.fit(np.array(self.embeddings))
+                logger.info("sklearn NearestNeighbors model rebuilt")
+    
     
     def save_database(self, filepath: Optional[str] = None) -> bool:
         """
@@ -346,11 +434,6 @@ class VectorStore:
             # Save to pickle file
             with open(filepath, 'wb') as f:
                 pickle.dump(data, f)
-            
-            # Also save FAISS index
-            if self.index is not None:
-                index_file = filepath.replace('.pkl', '.faiss')
-                faiss.write_index(self.index, index_file)
             
             logger.info(f"Database saved to {filepath}")
             return True
@@ -389,13 +472,8 @@ class VectorStore:
             self.next_person_id = data.get('next_person_id', 1)
             self.embedding_dim = data.get('embedding_dim')
             
-            # Load FAISS index
-            index_file = filepath.replace('.pkl', '.faiss')
-            if os.path.exists(index_file):
-                self.index = faiss.read_index(index_file)
-                logger.info(f"FAISS index loaded from {index_file}")
-            else:
-                # Rebuild index if file doesn't exist
+            # Rebuild index for the current backend
+            if self.embeddings:
                 self._rebuild_index()
             
             logger.info(f"Database loaded from {filepath}")

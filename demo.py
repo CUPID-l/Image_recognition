@@ -18,16 +18,18 @@ def create_demo_config():
     """Create a minimal configuration for demo."""
     return {
         'face_detection': {
-            'method': 'haar',  # Use Haar for demo (no MTCNN dependency)
+            'method': 'deepface',  # Use DeepFace for detection
+            'detector_backend': 'opencv',  # Use OpenCV backend (no compilation needed)
             'min_confidence': 0.7,
             'min_face_size': 80
         },
         'embedding': {
-            'model': 'face_recognition',  # Use face_recognition library
+            'model': 'Facenet',  # Use DeepFace Facenet model
+            'detector_backend': 'opencv',
             'normalization': True
         },
         'vector_store': {
-            'backend': 'faiss',
+            'backend': 'chromadb',  # Use ChromaDB (pure Python)
             'similarity_metric': 'cosine'
         },
         'recognition': {
@@ -99,7 +101,7 @@ def demo_face_recognition():
     except ImportError as e:
         print(f"✗ Import error: {e}")
         print("\nTo run this demo, install the required dependencies:")
-        print("pip install opencv-python mtcnn face-recognition faiss-cpu numpy pyyaml")
+        print("pip install opencv-python numpy pillow deepface chromadb scikit-learn pyyaml")
         
     except Exception as e:
         print(f"✗ Demo error: {e}")

@@ -2,11 +2,13 @@
 
 A real-time face recognition system that detects faces in images, generates vector embeddings for unique identification, and continuously recognizes previously detected individuals.
 
+**✨ Now requires only Python packages - no compilation needed!**
+
 ## Features
 
-- **Real-time Face Detection**: Uses MTCNN or Haar Cascades for accurate face detection
-- **Face Embedding Generation**: Converts faces to vector representations using FaceNet or face_recognition library
-- **Vector Database**: Efficient storage and retrieval using FAISS with similarity search
+- **Real-time Face Detection**: Uses DeepFace or Haar Cascades for accurate face detection
+- **Face Embedding Generation**: Converts faces to vector representations using DeepFace models
+- **Vector Database**: Efficient storage and retrieval using ChromaDB with similarity search
 - **Continuous Recognition**: Real-time identification of known individuals with auto-enrollment
 - **Quality Checks**: Blur detection, lighting validation, and face quality assessment
 - **Interactive Mode**: Manual enrollment, statistics, and system management
@@ -21,7 +23,12 @@ git clone https://github.com/CUPID-l/Image_recognition.git
 cd Image_recognition
 ```
 
-2. Install dependencies:
+2. Install dependencies (Python-only, no compilation required):
+```bash
+pip install opencv-python numpy pillow deepface chromadb scikit-learn tf-keras pyyaml
+```
+
+Or install from requirements.txt:
 ```bash
 pip install -r requirements.txt
 ```
@@ -50,22 +57,34 @@ python main.py --interactive
 python main.py --config path/to/config.yaml
 ```
 
+## Python-Only Dependencies
+
+This system now uses only Python packages that don't require compilation:
+
+- **opencv-python**: Pre-compiled OpenCV for Python
+- **numpy**: Numerical computing
+- **pillow**: Image processing
+- **deepface**: Face detection and recognition (replaces MTCNN, face_recognition, facenet-pytorch)
+- **chromadb**: Vector database (replaces FAISS)
+- **scikit-learn**: Machine learning utilities
+- **tf-keras**: Deep learning backend for DeepFace
+
 ## System Architecture
 
 ### Core Components
 
 1. **Face Detection Module** (`src/face_detector.py`)
-   - MTCNN and Haar Cascade support
+   - DeepFace and Haar Cascade support
    - Face preprocessing and alignment
    - Quality validation
 
 2. **Embedding Generator** (`src/embedding_generator.py`)
-   - FaceNet and face_recognition models
+   - DeepFace models (Facenet, VGG-Face, ArcFace, etc.)
    - Vector normalization
    - Embedding validation
 
 3. **Vector Store** (`src/vector_store.py`)
-   - FAISS-based similarity search
+   - ChromaDB-based similarity search
    - Persistent storage
    - Efficient indexing
 
@@ -86,9 +105,21 @@ Edit `config/config.yaml` to customize system behavior:
 ```yaml
 # Face Detection Settings
 face_detection:
-  method: "mtcnn"  # Options: mtcnn, haar
+  method: "deepface"  # Options: deepface, haar
+  detector_backend: "opencv"  # DeepFace backend: opencv, ssd, dlib, mtcnn, retinaface
   min_confidence: 0.9
   min_face_size: 80
+
+# Embedding Settings
+embedding:
+  model: "Facenet"  # DeepFace models: VGG-Face, Facenet, OpenFace, DeepFace, etc.
+  detector_backend: "opencv"
+  normalization: true
+
+# Vector Database Settings
+vector_store:
+  backend: "chromadb"  # Options: chromadb, sklearn
+  similarity_metric: "cosine"
 
 # Recognition Settings
 recognition:
@@ -144,15 +175,14 @@ stats = recognizer.get_recognition_statistics()
 
 - **CPU**: Intel i5/AMD Ryzen 5 or better
 - **RAM**: 8GB minimum, 16GB recommended
-- **GPU**: NVIDIA GTX 1660+ for GPU acceleration (optional)
 - **Storage**: SSD recommended for better I/O performance
 
 ### Optimization Tips
 
-1. **GPU Acceleration**: Install `faiss-gpu` and set `use_gpu: true` in config
+1. **Model Selection**: Use faster DeepFace models for better performance
 2. **Frame Skipping**: Increase `frame_skip` for better performance
-3. **Model Selection**: Use `face_recognition` for faster processing, `facenet` for accuracy
-4. **Resolution**: Lower camera resolution for better FPS
+3. **Resolution**: Lower camera resolution for better FPS
+4. **Backend Selection**: Use OpenCV detector backend for fastest detection
 
 ## Directory Structure
 
@@ -164,17 +194,23 @@ face_recognition_system/
 │   ├── vector_store.py     # Vector database
 │   ├── recognizer.py       # Recognition logic
 │   └── main.py            # Main application
-├── data/                   # Data storage
-│   ├── embeddings/        # Face embeddings
+├── data/                   # Data storage (auto-created)
+│   ├── embeddings/        # ChromaDB files
 │   └── faces/             # Face images
 ├── config/                 # Configuration
 │   └── config.yaml        # System settings
 ├── tests/                  # Unit tests
-├── requirements.txt        # Dependencies
+├── requirements.txt        # Python-only dependencies
 └── main.py                # Entry point
 ```
 
 ## Testing
+
+Run the demo to test functionality:
+
+```bash
+python demo.py
+```
 
 Run tests with pytest:
 
@@ -196,11 +232,30 @@ pytest --cov=src tests/
 1. **Camera not found**: Check camera permissions and device ID
 2. **Poor recognition**: Adjust `similarity_threshold` in config
 3. **Slow performance**: Reduce resolution or increase `frame_skip`
-4. **Import errors**: Ensure all dependencies are installed
+4. **Import errors**: Ensure all dependencies are installed with `pip install -r requirements.txt`
+
+### DeepFace Models
+
+Available models in DeepFace:
+- **Facenet**: Good balance of speed and accuracy
+- **VGG-Face**: High accuracy, slower
+- **ArcFace**: State-of-the-art accuracy
+- **OpenFace**: Fast, lower accuracy
+- **DeepFace**: Original Facebook model
 
 ### Logging
 
 Check `face_recognition.log` for detailed error messages and performance metrics.
+
+## Migration from Compilation Dependencies
+
+This version replaces the following compilation-heavy dependencies with Python-only alternatives:
+
+- ❌ `mtcnn` → ✅ `deepface` (detection)
+- ❌ `face_recognition` → ✅ `deepface` (embeddings)  
+- ❌ `facenet-pytorch` → ✅ `deepface` (embeddings)
+- ❌ `faiss-cpu` → ✅ `chromadb` (vector database)
+- ❌ `dlib` → ✅ Not needed (DeepFace handles everything)
 
 ## Contributing
 
@@ -216,7 +271,6 @@ This project is open source and available under the MIT License.
 
 ## Acknowledgments
 
-- MTCNN for face detection
-- FaceNet for face embeddings
-- FAISS for efficient similarity search
+- DeepFace for comprehensive face analysis
+- ChromaDB for efficient vector storage
 - OpenCV for computer vision operations
