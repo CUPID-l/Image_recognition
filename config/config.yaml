@@ -1,0 +1,54 @@
+# Face Recognition System Configuration
+
+# Face Detection Settings
+face_detection:
+  method: "mtcnn"  # Options: mtcnn, haar, dlib
+  min_confidence: 0.9
+  min_face_size: 80
+  scale_factor: 0.709
+
+# Embedding Settings
+embedding:
+  model: "facenet"  # Options: facenet, deepface, arcface
+  embedding_size: 128
+  normalization: true
+
+# Vector Database Settings
+vector_store:
+  backend: "faiss"  # Options: faiss, annoy
+  similarity_metric: "cosine"  # Options: cosine, euclidean
+  index_type: "flat"  # Options: flat, ivf
+
+# Recognition Settings
+recognition:
+  similarity_threshold: 0.7
+  max_distance: 0.6
+  auto_enroll: true
+  confidence_threshold: 0.8
+
+# Video Processing Settings
+video:
+  fps_limit: 30
+  frame_skip: 1
+  display_annotations: true
+  save_crops: false
+
+# Storage Settings
+storage:
+  embeddings_path: "data/embeddings"
+  faces_path: "data/faces"
+  database_file: "data/vectors.pkl"
+  backup_interval: 100  # Save every N new enrollments
+
+# Performance Settings
+performance:
+  use_gpu: false
+  num_threads: 4
+  batch_size: 1
+  memory_limit_mb: 2048
+
+# Logging Settings
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  log_file: "face_recognition.log"
+  log_to_console: true
