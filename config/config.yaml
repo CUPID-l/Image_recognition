@@ -2,20 +2,22 @@
 
 # Face Detection Settings
 face_detection:
-  method: "mtcnn"  # Options: mtcnn, haar, dlib
+  method: "deepface"  # Options: deepface, haar
+  detector_backend: "opencv"  # DeepFace detector backend: opencv, ssd, dlib, mtcnn, retinaface
   min_confidence: 0.9
   min_face_size: 80
   scale_factor: 0.709
 
 # Embedding Settings
 embedding:
-  model: "facenet"  # Options: facenet, deepface, arcface
+  model: "Facenet"  # DeepFace models: VGG-Face, Facenet, OpenFace, DeepFace, DeepID, ArcFace, Dlib, SFace
+  detector_backend: "opencv"  # DeepFace detector backend
   embedding_size: 128
   normalization: true
 
 # Vector Database Settings
 vector_store:
-  backend: "faiss"  # Options: faiss, annoy
+  backend: "chromadb"  # Options: chromadb, sklearn
   similarity_metric: "cosine"  # Options: cosine, euclidean
   index_type: "flat"  # Options: flat, ivf
 

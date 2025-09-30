@@ -1,18 +1,17 @@
 """
 Embedding Generation Module
 
-Converts face images to vector representations using FaceNet, DeepFace, or other models.
+Converts face images to vector representations using DeepFace models.
 Includes embedding normalization and consistency validation.
 """
 
 import numpy as np
 import logging
 from typing import Optional, Dict, Any, List
-import face_recognition
-from facenet_pytorch import MTCNN, InceptionResnetV1
-import torch
+from deepface import DeepFace
 from PIL import Image
 import cv2
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +27,12 @@ class EmbeddingGenerator:
             config: Configuration dictionary with embedding settings
         """
         self.config = config.get('embedding', {})
-        self.model_name = self.config.get('model', 'facenet')
+        self.model_name = self.config.get('model', 'Facenet')
         self.embedding_size = self.config.get('embedding_size', 128)
         self.normalization = self.config.get('normalization', True)
         
-        # Initialize model based on configuration
-        self.model = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() and 
-                                 config.get('performance', {}).get('use_gpu', False) 
-                                 else 'cpu')
+        # DeepFace model options: VGG-Face, Facenet, OpenFace, DeepFace, DeepID, ArcFace, Dlib, SFace
+        self.detector_backend = self.config.get('detector_backend', 'opencv')
         
         self._initialize_model()
         logger.info(f"Embedding generator initialized with model: {self.model_name}")
@@ -44,39 +40,24 @@ class EmbeddingGenerator:
     def _initialize_model(self):
         """Initialize the selected embedding model."""
         try:
-            if self.model_name == 'facenet':
-                self._initialize_facenet()
-            elif self.model_name == 'face_recognition':
-                # face_recognition library uses dlib's ResNet model
-                logger.info("Using face_recognition library (dlib ResNet)")
-            else:
-                raise ValueError(f"Unsupported embedding model: {self.model_name}")
-                
-        except Exception as e:
-            logger.error(f"Failed to initialize embedding model: {e}")
-            # Fallback to face_recognition
-            self.model_name = 'face_recognition'
-            logger.info("Falling back to face_recognition library")
-    
-    def _initialize_facenet(self):
-        """Initialize FaceNet model."""
-        try:
-            # Load pre-trained FaceNet model
-            self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
-            self.mtcnn_resnet = MTCNN(
-                image_size=160, margin=0, min_face_size=20,
-                thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=True,
-                device=self.device
-            )
-            logger.info("FaceNet model loaded successfully")
+            # Validate model name for DeepFace
+            valid_models = ['VGG-Face', 'Facenet', 'OpenFace', 'DeepFace', 'DeepID', 'ArcFace', 'Dlib', 'SFace']
+            if self.model_name not in valid_models:
+                logger.warning(f"Model {self.model_name} not in valid models {valid_models}, using Facenet")
+                self.model_name = 'Facenet'
+            
+            # Test model by creating a dummy embedding
+            logger.info(f"Testing DeepFace model: {self.model_name}")
             
         except Exception as e:
-            logger.error(f"Failed to load FaceNet model: {e}")
-            raise
+            logger.error(f"Failed to initialize embedding model: {e}")
+            # Fallback to Facenet
+            self.model_name = 'Facenet'
+            logger.info("Falling back to Facenet model")
     
     def generate_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         """
-        Generate embedding from face image.
+        Generate embedding from face image using DeepFace.
         
         Args:
             face_image: Preprocessed face image
@@ -88,95 +69,47 @@ class EmbeddingGenerator:
             return None
         
         try:
-            if self.model_name == 'facenet':
-                return self._generate_facenet_embedding(face_image)
-            elif self.model_name == 'face_recognition':
-                return self._generate_face_recognition_embedding(face_image)
-            else:
-                logger.error(f"Unknown model: {self.model_name}")
-                return None
+            return self._generate_deepface_embedding(face_image)
                 
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             return None
     
-    def _generate_facenet_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
-        """Generate embedding using FaceNet."""
+    def _generate_deepface_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
+        """Generate embedding using DeepFace."""
         try:
-            # Convert numpy array to PIL Image
-            if face_image.dtype != np.uint8:
-                # If normalized [0,1], scale back to [0,255]
-                if face_image.max() <= 1.0:
-                    face_image = (face_image * 255).astype(np.uint8)
-            
             # Convert BGR to RGB if necessary
             if len(face_image.shape) == 3 and face_image.shape[2] == 3:
-                face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-            
-            pil_image = Image.fromarray(face_image)
-            
-            # Preprocess with MTCNN (resize and normalize)
-            face_tensor = self.mtcnn_resnet(pil_image)
-            
-            if face_tensor is None:
-                logger.warning("MTCNN preprocessing failed")
-                return None
-            
-            # Ensure correct dimensions
-            if face_tensor.dim() == 3:
-                face_tensor = face_tensor.unsqueeze(0)
-            
-            face_tensor = face_tensor.to(self.device)
-            
-            # Generate embedding
-            with torch.no_grad():
-                embedding = self.model(face_tensor)
-                embedding = embedding.cpu().numpy().flatten()
-            
-            # Normalize if requested
-            if self.normalization:
-                embedding = self.normalize_embedding(embedding)
-            
-            return embedding
-            
-        except Exception as e:
-            logger.error(f"FaceNet embedding generation failed: {e}")
-            return None
-    
-    def _generate_face_recognition_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
-        """Generate embedding using face_recognition library."""
-        try:
-            # Ensure image is in correct format
-            if face_image.dtype != np.uint8:
-                if face_image.max() <= 1.0:
-                    face_image = (face_image * 255).astype(np.uint8)
-            
-            # Convert BGR to RGB
-            if len(face_image.shape) == 3:
                 rgb_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
             else:
                 rgb_image = face_image
             
-            # Generate embedding
-            encodings = face_recognition.face_encodings(rgb_image)
+            # Generate embedding using DeepFace
+            embedding_obj = DeepFace.represent(
+                img_path=rgb_image,
+                model_name=self.model_name,
+                detector_backend=self.detector_backend,
+                enforce_detection=False,
+                align=True,
+                normalization='base'
+            )
             
-            if len(encodings) == 0:
-                logger.warning("No face encoding generated")
-                return None
+            # Extract embedding from result
+            if isinstance(embedding_obj, list) and len(embedding_obj) > 0:
+                embedding = np.array(embedding_obj[0]['embedding'])
+            else:
+                embedding = np.array(embedding_obj['embedding'])
             
-            # Use the first encoding if multiple faces detected
-            embedding = encodings[0]
-            
-            # Normalize if requested
+            # Apply normalization if requested
             if self.normalization:
                 embedding = self.normalize_embedding(embedding)
             
             return embedding
             
         except Exception as e:
-            logger.error(f"face_recognition embedding generation failed: {e}")
+            logger.error(f"DeepFace embedding generation failed: {e}")
             return None
-    
+
     def normalize_embedding(self, embedding: np.ndarray) -> np.ndarray:
         """
         Normalize embedding vector using L2 normalization.

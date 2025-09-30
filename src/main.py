@@ -86,16 +86,18 @@ class FaceRecognitionApp:
         """Get default configuration."""
         return {
             'face_detection': {
-                'method': 'mtcnn',
+                'method': 'deepface',
+                'detector_backend': 'opencv',
                 'min_confidence': 0.9,
                 'min_face_size': 80
             },
             'embedding': {
-                'model': 'face_recognition',
+                'model': 'Facenet',
+                'detector_backend': 'opencv',
                 'normalization': True
             },
             'vector_store': {
-                'backend': 'faiss',
+                'backend': 'chromadb',
                 'similarity_metric': 'cosine'
             },
             'recognition': {

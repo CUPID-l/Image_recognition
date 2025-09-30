@@ -1,25 +1,17 @@
-# Core Libraries
+# Core Libraries (no compilation needed)
 opencv-python>=4.8.0
 numpy>=1.24.0
 pillow>=10.0.0
 
-# Face Detection
-mtcnn>=0.1.1
-dlib>=19.24.0
-
-# Face Recognition
-face-recognition>=1.3.0
+# Face recognition (handles everything internally)
 deepface>=0.0.79
-facenet-pytorch>=2.5.0
+tf-keras>=2.20.0
 
-# Vector Database
-faiss-cpu>=1.7.0
-# faiss-gpu>=1.7.0  # Uncomment for GPU acceleration
-annoy>=1.17.0
+# Vector database (pure Python or pre-built)
+chromadb>=1.1.0
 
 # Utilities
 scikit-learn>=1.3.0
-joblib>=1.3.0
 pyyaml>=6.0.0
 tqdm>=4.64.0
 
