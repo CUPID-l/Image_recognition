@@ -316,6 +316,42 @@ class VectorStore:
         
         return embeddings_metadata
     
+    def update_person_metadata(self, person_id: int, metadata_updates: Dict[str, Any]) -> bool:
+        """
+        Update metadata for all embeddings of a specific person.
+        
+        Args:
+            person_id: Person identifier
+            metadata_updates: Dictionary of metadata fields to update
+            
+        Returns:
+            True if updated successfully
+        """
+        if person_id not in self.id_to_index:
+            logger.error(f"Person {person_id} not found")
+            return False
+        
+        try:
+            # Update metadata in memory
+            for idx in self.id_to_index[person_id]:
+                self.metadata[idx].update(metadata_updates)
+                # Add timestamp for the update
+                self.metadata[idx]['metadata_updated'] = datetime.now().isoformat()
+            
+            # Rebuild ChromaDB to apply changes
+            if self.backend == 'chromadb':
+                self._rebuild_index()
+            
+            # Save to persist changes
+            self.save_database()
+            
+            logger.info(f"Updated metadata for person {person_id}: {metadata_updates}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update person metadata: {e}")
+            return False
+    
     def remove_person(self, person_id: int) -> bool:
         """
         Remove all embeddings for a person.

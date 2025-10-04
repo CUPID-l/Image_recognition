@@ -124,8 +124,14 @@ def show_usage():
     print("   p - Print statistics")
     print("   l - List enrolled people")
     print("   e - Enroll person manually")
+    print("   n - Rename/label a person by ID")
     print("\n4. Configuration:")
     print("   Edit config/config.yaml to customize behavior")
+    print("\n5. Workflow:")
+    print("   - System auto-enrolls unknown faces as 'Person_X'")
+    print("   - Use 'l' command to list all enrolled people")
+    print("   - Use 'n' command to rename them with proper names")
+    print("   - System will recognize renamed people in future frames")
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--usage':
