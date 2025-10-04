@@ -244,6 +244,11 @@ class FaceRecognitionApp:
         if recognition_results['new_enrollments'] > 0:
             new_text = f"New: {recognition_results['new_enrollments']}"
             self._draw_text_with_background(frame, new_text, (400, stats_y), (0, 255, 255), stats_bg_color)
+        
+        # Helper text at bottom
+        help_text = "Commands: q=Quit | s=Save | p=Stats | l=List (interactive mode: e=Enroll | n=Rename)"
+        help_y = frame.shape[0] - 10
+        self._draw_text_with_background(frame, help_text, (10, help_y), (200, 200, 200), stats_bg_color)
     
     def _draw_text_with_background(self, frame: np.ndarray, text: str, 
                                   position: tuple, text_color: tuple, bg_color: tuple):
@@ -354,6 +359,7 @@ class FaceRecognitionApp:
         print("  'p' - Print statistics")
         print("  'l' - List all enrolled people")
         print("  'e' - Enroll person manually")
+        print("  'n' - Rename/label a person by ID")
         print("Starting recognition loop...\n")
         
         # Start background recognition
@@ -387,6 +393,8 @@ class FaceRecognitionApp:
                               f"({person['total_embeddings']} embeddings)")
                 elif cmd == 'e':
                     self._manual_enrollment()
+                elif cmd == 'n':
+                    self._rename_person()
                 
             except KeyboardInterrupt:
                 break
@@ -422,6 +430,49 @@ class FaceRecognitionApp:
                 
         except Exception as e:
             print(f"Manual enrollment error: {e}")
+    
+    def _rename_person(self):
+        """Handle renaming/labeling of an enrolled person."""
+        try:
+            # First, list all enrolled people
+            people = self.recognizer.list_all_people()
+            if not people:
+                print("No people enrolled yet")
+                return
+            
+            print("\nEnrolled people:")
+            for person in people:
+                print(f"  ID {person['person_id']}: {person['name']} "
+                      f"({person['total_embeddings']} embeddings)")
+            
+            # Get person ID to rename
+            person_id_str = input("\nEnter Person ID to rename: ").strip()
+            if not person_id_str:
+                print("Person ID cannot be empty")
+                return
+            
+            try:
+                person_id = int(person_id_str)
+            except ValueError:
+                print("Invalid Person ID. Must be a number.")
+                return
+            
+            # Get new name
+            new_name = input("Enter new name: ").strip()
+            if not new_name:
+                print("Name cannot be empty")
+                return
+            
+            # Update the name
+            success = self.recognizer.update_person_name(person_id, new_name)
+            
+            if success:
+                print(f"Successfully renamed Person {person_id} to '{new_name}'")
+            else:
+                print(f"Failed to rename person. Person ID {person_id} may not exist.")
+                
+        except Exception as e:
+            print(f"Rename error: {e}")
     
     def _cleanup(self):
         """Clean up resources."""

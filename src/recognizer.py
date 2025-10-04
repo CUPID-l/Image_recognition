@@ -318,23 +318,18 @@ class FaceRecognizer:
             True if updated successfully
         """
         try:
-            embeddings_metadata = self.vector_store.get_person_embeddings(person_id)
-            if not embeddings_metadata:
+            # Use the vector store's update method
+            success = self.vector_store.update_person_metadata(
+                person_id, 
+                {'name': new_name}
+            )
+            
+            if success:
+                logger.info(f"Updated name for person {person_id} to '{new_name}'")
+            else:
                 logger.error(f"Person {person_id} not found")
-                return False
             
-            # Update name in all metadata entries
-            # Note: This is a simplified approach. In practice, you might want to
-            # update the vector store to support metadata updates without rebuilding.
-            for i, (embedding, metadata) in enumerate(embeddings_metadata):
-                metadata['name'] = new_name
-                metadata['name_updated'] = datetime.now().isoformat()
-            
-            # Force save to persist changes
-            self.vector_store.save_database()
-            
-            logger.info(f"Updated name for person {person_id} to '{new_name}'")
-            return True
+            return success
             
         except Exception as e:
             logger.error(f"Failed to update person name: {e}")
