@@ -200,8 +200,9 @@ class FaceRecognizer:
         Returns:
             New person ID
         """
+        # First add to get the person_id, then update with proper name if needed
         metadata = {
-            'name': person_name,
+            'name': person_name,  # Will be updated below if None
             'enrollment_timestamp': datetime.now().isoformat(),
             'detection_confidence': face_data['confidence'],
             'quality_score': face_data['quality'].get('blur_score', 0),
@@ -214,7 +215,14 @@ class FaceRecognizer:
             metadata=metadata
         )
         
-        logger.info(f"Enrolled new person with ID: {person_id}")
+        # If no name was provided, use auto-generated name and update
+        if person_name is None:
+            auto_name = f"Person_{person_id}"
+            self.vector_store.update_person_metadata(person_id, {'name': auto_name})
+            logger.info(f"Enrolled new person with auto-generated ID: {person_id} as '{auto_name}'")
+        else:
+            logger.info(f"Enrolled new person with ID: {person_id} as '{person_name}'")
+        
         return person_id
     
     def enroll_person_manually(self, frame: np.ndarray, person_name: str, 
