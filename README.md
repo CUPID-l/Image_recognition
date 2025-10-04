@@ -143,6 +143,40 @@ When running in interactive mode (`--interactive`):
 - `p` - Print recognition statistics
 - `l` - List all enrolled people
 - `e` - Enroll person manually
+- `n` - Rename/label a person by ID (useful for renaming auto-enrolled faces)
+
+## Auto-Enrollment & Labeling Workflow
+
+The system now supports automatic enrollment with post-facto labeling:
+
+1. **Auto-Enrollment**: When a new face is detected, it's automatically enrolled as "Person_1", "Person_2", etc.
+2. **Recognition**: When that face appears again, the system recognizes it
+3. **Manual Labeling**: Use the `l` command to list all enrolled people with their IDs, then use `n` command to rename them with proper names
+4. **Persistence**: All changes are automatically saved to disk
+
+Example workflow:
+```bash
+# Start in interactive mode
+python main.py --interactive
+
+# System detects and auto-enrolls faces
+# Face 1 detected -> "Person_1" 
+# Face 2 detected -> "Person_2"
+
+# List all enrolled people
+> l
+Enrolled people (2):
+  ID 1: Person_1 (3 embeddings)
+  ID 2: Person_2 (2 embeddings)
+
+# Rename Person_1 to "John Doe"
+> n
+Enter Person ID to rename: 1
+Enter new name: John Doe
+Successfully renamed Person 1 to 'John Doe'
+
+# Now the system will recognize this person as "John Doe"
+```
 
 ## API Usage
 
